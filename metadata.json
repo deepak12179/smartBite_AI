@@ -1,0 +1,10 @@
+{
+  "name": "AI Food Analyzer & Health Tracker",
+  "description": "An AI-powered meal analysis and comprehensive health tracking platform offering instant nutritional breakdowns, diet coaching, gamified challenges, streaks, and charts.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

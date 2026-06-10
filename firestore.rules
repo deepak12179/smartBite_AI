@@ -1,0 +1,155 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Hardened Global Helpers ---
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    
+    function isSignedIn() { 
+      return request.auth != null; 
+    }
+    
+    function isOwner(userId) { 
+      return isSignedIn() && request.auth.uid == userId; 
+    }
+    
+    function incoming() { 
+      return request.resource.data; 
+    }
+    
+    function existing() { 
+      return resource.data; 
+    }
+
+    // --- Standalone Entity Validation Helpers ---
+    
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+        'uid', 'displayName', 'email', 'age', 'weight', 'height', 
+        'dailyCalorieGoal', 'healthGoals', 'dietPlan', 'streakCount', 
+        'lastLoggedDate', 'points', 'badges'
+      ])
+      && data.keys().size() == 13
+      && data.uid is string && isValidId(data.uid) && data.uid == request.auth.uid
+      && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
+      && data.email is string && data.email.size() >= 3 && data.email.size() <= 150
+      && data.age is int && data.age >= 1 && data.age <= 120
+      && (data.weight is int || data.weight is float) && data.weight > 0.0 && data.weight <= 500.0
+      && (data.height is int || data.height is float) && data.height > 0.0 && data.height <= 300.0
+      && data.dailyCalorieGoal is int && data.dailyCalorieGoal >= 500 && data.dailyCalorieGoal <= 10000
+      && data.healthGoals is string && data.healthGoals in ["Lose weight", "Build muscle", "Stay healthy", "Increase athletic performance"]
+      && data.dietPlan is string && data.dietPlan in ["Balanced", "Keto", "Low Carb", "High Protein", "Vegetarian"]
+      && data.streakCount is int && data.streakCount >= 0
+      && (data.lastLoggedDate == null || (data.lastLoggedDate is string && data.lastLoggedDate.size() <= 30))
+      && data.points is int && data.points >= 0
+      && data.badges is list && data.badges.size() <= 100;
+    }
+
+    function isValidFoodLog(data) {
+      return data.keys().hasAll([
+        'id', 'userId', 'timestamp', 'date', 'foodName', 'mealType', 
+        'calories', 'protein', 'carbs', 'fats', 'vitamins', 'minerals', 
+        'healthScore', 'summary', 'recommendation', 'reason'
+      ])
+      && data.keys().size() >= 16 && data.keys().size() <= 18
+      && data.id is string && isValidId(data.id)
+      && data.userId is string && data.userId == request.auth.uid
+      && data.timestamp is string && data.timestamp.size() <= 50
+      && data.date is string && data.date.size() <= 30
+      && data.foodName is string && data.foodName.size() >= 1 && data.foodName.size() <= 200
+      && data.mealType is string && data.mealType in ['Breakfast', 'Lunch', 'Dinner', 'Snack']
+      && (data.calories is int || data.calories is float) && data.calories >= 0.0 && data.calories <= 10000.0
+      && (data.protein is int || data.protein is float) && data.protein >= 0.0 && data.protein <= 1000.0
+      && (data.carbs is int || data.carbs is float) && data.carbs >= 0.0 && data.carbs <= 1000.0
+      && (data.fats is int || data.fats is float) && data.fats >= 0.0 && data.fats <= 1000.0
+      && data.vitamins is list && data.vitamins.size() <= 50
+      && data.minerals is list && data.minerals.size() <= 50
+      && data.healthScore is int && data.healthScore >= 0 && data.healthScore <= 100
+      && data.summary is string && data.summary.size() <= 2000
+      && data.recommendation is string && data.recommendation in ['EAT', 'MODERATE', 'AVOID']
+      && data.reason is string && data.reason.size() <= 2000
+      && (!data.keys().hasAll(['imageBase64']) || (data.imageBase64 is string && data.imageBase64.size() <= 600000))
+      && (!data.keys().hasAll(['dietaryFiber']) || (data.dietaryFiber is int || data.dietaryFiber is float));
+    }
+
+    function isValidChallenge(data) {
+      return data.keys().hasAll([
+        'id', 'title', 'description', 'durationDays', 'pointsValue', 
+        'progress', 'completed', 'type', 'icon'
+      ])
+      && data.keys().size() == 9
+      && data.id is string && isValidId(data.id)
+      && data.title is string && data.title.size() <= 150
+      && data.description is string && data.description.size() <= 1000
+      && data.durationDays is int && data.durationDays >= 0
+      && data.pointsValue is int && data.pointsValue >= 0
+      && data.progress is int && data.progress >= 0
+      && data.completed is bool
+      && data.type is string && data.type in ['streak', 'protein', 'calories', 'clean-eating']
+      && data.icon is string && data.icon.size() <= 50;
+    }
+
+    function isValidInAppNotification(data) {
+      return data.keys().hasAll([
+        'id', 'title', 'message', 'timestamp', 'read', 'type'
+      ])
+      && data.keys().size() == 6
+      && data.id is string && isValidId(data.id)
+      && data.title is string && data.title.size() <= 200
+      && data.message is string && data.message.size() <= 2000
+      && data.timestamp is string && data.timestamp.size() <= 50
+      && data.read is bool
+      && data.type is string && data.type in ['goal', 'reminder', 'streak', 'badge'];
+    }
+
+    // --- Master Collection Match Blocks ---
+    match /test/{documentId} {
+      allow read: if true;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile(incoming());
+      allow update: if isOwner(userId) && isValidUserProfile(incoming()) && (
+        incoming().uid == existing().uid &&
+        incoming().email == existing().email
+      );
+      allow delete: if isOwner(userId);
+
+      match /foodLogs/{logId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidFoodLog(incoming()) && isValidId(logId);
+        allow update: if isOwner(userId) && isValidFoodLog(incoming()) && isValidId(logId) && (
+          incoming().id == existing().id &&
+          incoming().userId == existing().userId
+        );
+        allow delete: if isOwner(userId);
+      }
+
+      match /challenges/{challengeId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidChallenge(incoming()) && isValidId(challengeId);
+        allow update: if isOwner(userId) && isValidChallenge(incoming()) && isValidId(challengeId) && (
+          incoming().id == existing().id
+        );
+        allow delete: if isOwner(userId);
+      }
+
+      match /notifications/{notificationId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidInAppNotification(incoming()) && isValidId(notificationId);
+        allow update: if isOwner(userId) && isValidInAppNotification(incoming()) && isValidId(notificationId) && (
+          incoming().id == existing().id
+        );
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

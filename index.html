@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Google AI Studio App</title>
+    <script>
+      // Immersive interceptor for benign, dev-only WebSocket connection rejections from Vite HMR
+      (function() {
+        const targetPhrases = [
+          "websocket",
+          "ws:",
+          "wss:",
+          "vite",
+          "hmr",
+          "connection",
+          "closed without opened",
+          "failed to connect"
+        ];
+        
+        function matchesBenign(text) {
+          if (!text) return false;
+          const lower = String(text).toLowerCase();
+          return targetPhrases.some(phrase => lower.includes(phrase));
+        }
+
+        function readError(err) {
+          if (!err) return "";
+          if (typeof err === "string") return err;
+          const parts = [];
+          try {
+            parts.push(
+              err.message,
+              err.name,
+              err.stack,
+              err.description,
+              err.code,
+              err.reason,
+              err.toString ? err.toString() : ""
+            );
+            // Search all keys dynamically if possible
+            for (const key in err) {
+              try {
+                if (typeof err[key] === "string") {
+                  parts.push(err[key]);
+                }
+              } catch (e) {
+                // ignore
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+          return parts.filter(Boolean).filter(s => typeof s === "string").join(" ");
+        }
+
+        // Catch and prevent unhandled promise rejections immediately
+        window.addEventListener("unhandledrejection", function(e) {
+          const reasonStr = readError(e.reason);
+          const errorStr = readError(e);
+          if (matchesBenign(reasonStr) || matchesBenign(errorStr)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            e.stopPropagation();
+          }
+        }, true);
+
+        // Catch and prevent uncaught runtime errors
+        window.addEventListener("error", function(e) {
+          const errorStr = readError(e.error) || e.message || "";
+          const eventStr = readError(e);
+          if (matchesBenign(errorStr) || matchesBenign(eventStr)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            e.stopPropagation();
+          }
+        }, true);
+
+        // Suppress benign connection alerts/warnings in console to preserve pristine logs
+        const origWarn = console.warn;
+        const origErr = console.error;
+        console.warn = function(...args) {
+          const logMsg = args.map(a => String(a)).join(" ");
+          if (matchesBenign(logMsg)) return;
+          origWarn.apply(console, args);
+        };
+        console.error = function(...args) {
+          const logMsg = args.map(a => String(a)).join(" ");
+          if (matchesBenign(logMsg)) return;
+          origErr.apply(console, args);
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,211 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User metadata, streaks, health metrics and goals",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique user ID"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "age": {
+          "type": "number",
+          "description": "User age in years"
+        },
+        "weight": {
+          "type": "number",
+          "description": "User weight in kg"
+        },
+        "height": {
+          "type": "number",
+          "description": "User height in cm"
+        },
+        "dailyCalorieGoal": {
+          "type": "number",
+          "description": "Daily targeted energy in calories"
+        },
+        "healthGoals": {
+          "type": "string",
+          "description": "A health target",
+          "enum": ["Lose weight", "Build muscle", "Stay healthy", "Increase athletic performance"]
+        },
+        "dietPlan": {
+          "type": "string",
+          "description": "A customized diet layout style",
+          "enum": ["Balanced", "Keto", "Low Carb", "High Protein", "Vegetarian"]
+        },
+        "streakCount": {
+          "type": "number",
+          "description": "Consecutive days logged streak"
+        },
+        "lastLoggedDate": {
+          "type": "string",
+          "description": "Last logged local date string YYYY-MM-DD"
+        },
+        "points": {
+          "type": "number",
+          "description": "Accrued scoring points"
+        },
+        "badges": {
+          "type": "array",
+          "description": "List of unlocked badge IDs"
+        }
+      },
+      "required": ["uid", "displayName", "email", "age", "weight", "height", "dailyCalorieGoal", "healthGoals", "dietPlan", "streakCount", "points", "badges"]
+    },
+    "FoodLog": {
+      "title": "FoodLog",
+      "description": "AI analysis record for a logged meals plate",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "foodName": {
+          "type": "string"
+        },
+        "mealType": {
+          "type": "string",
+          "enum": ["Breakfast", "Lunch", "Dinner", "Snack"]
+        },
+        "calories": {
+          "type": "number"
+        },
+        "protein": {
+          "type": "number"
+        },
+        "carbs": {
+          "type": "number"
+        },
+        "fats": {
+          "type": "number"
+        },
+        "dietaryFiber": {
+          "type": "number"
+        },
+        "vitamins": {
+          "type": "array"
+        },
+        "minerals": {
+          "type": "array"
+        },
+        "healthScore": {
+          "type": "number"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "recommendation": {
+          "type": "string",
+          "enum": ["EAT", "MODERATE", "AVOID"]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "imageBase64": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "userId", "timestamp", "date", "foodName", "mealType", "calories", "protein", "carbs", "fats", "vitamins", "minerals", "healthScore", "summary", "recommendation", "reason"]
+    },
+    "Challenge": {
+      "title": "Challenge",
+      "description": "Weekly tracking routine or milestone tracker for a user",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "durationDays": {
+          "type": "number"
+        },
+        "pointsValue": {
+          "type": "number"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["streak", "protein", "calories", "clean-eating"]
+        },
+        "icon": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "title", "description", "durationDays", "pointsValue", "progress", "completed", "type", "icon"]
+    },
+    "InAppNotification": {
+      "title": "InAppNotification",
+      "description": "In-app system trigger alert or achievement reminder",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["goal", "reminder", "streak", "badge"]
+        }
+      },
+      "required": ["id", "title", "message", "timestamp", "read", "type"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Master record containing metrics, streaks, and scoring settings"
+    },
+    "/users/{userId}/foodLogs/{logId}": {
+      "schema": "FoodLog",
+      "description": "Logs of meals ingested by this user"
+    },
+    "/users/{userId}/challenges/{challengeId}": {
+      "schema": "Challenge",
+      "description": "Challenges status specific to this user"
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": "InAppNotification",
+      "description": "Milestones and alerts for this user"
+    }
+  }
+}

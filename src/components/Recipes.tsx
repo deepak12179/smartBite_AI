@@ -13,10 +13,12 @@ export default function Recipes({ profile }: RecipesProps) {
   const [calcBudget, setCalcBudget] = useState<number>(profile.dailyCalorieGoal);
   const [activeRecipeIndex, setActiveRecipeIndex] = useState<number | null>(0);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [fallbackWarning, setFallbackWarning] = useState<string | null>(null);
 
   const triggerGenerateRecipes = async () => {
     setIsLoading(true);
     setErrorText(null);
+    setFallbackWarning(null);
     try {
       const response = await fetch("/api/suggest-recipes", {
         method: "POST",
@@ -28,12 +30,14 @@ export default function Recipes({ profile }: RecipesProps) {
       });
 
       if (!response.ok) {
-        throw new Error("Recipe request failed");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Recipe request failed");
       }
 
       const data = await response.json();
       if (data.recipes) {
         setRecipesList(data.recipes);
+        setFallbackWarning(data.warning || null);
         setActiveRecipeIndex(0);
         // Award badge points for recipe search (add mock activity tracker alert)
       } else {
@@ -41,7 +45,7 @@ export default function Recipes({ profile }: RecipesProps) {
       }
     } catch (err: any) {
       console.error(err);
-      setErrorText("Recipes AI generation is temporarily unavailable. Please try again in a moment.");
+      setErrorText(err.message || "Recipes AI generation is temporarily unavailable. Please try again in a moment.");
     } finally {
       setIsLoading(false);
     }
@@ -138,89 +142,101 @@ export default function Recipes({ profile }: RecipesProps) {
               </div>
             </div>
           ) : (
-            <div className="grid sm:grid-cols-12 gap-6 items-start">
-              
-              {/* Recipe list selectors */}
-              <div className="sm:col-span-4 space-y-2.5">
-                <span className="text-[10px] font-bold text-stone-400 font-mono tracking-wider block">CHOOSE RECIPE:</span>
-                {recipesList.map((recipe, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setActiveRecipeIndex(index)}
-                    className={`w-full text-left p-3.5 rounded-xl border transition ${
-                      activeRecipeIndex === index 
-                        ? "bg-emerald-50 border-emerald-500/70 text-emerald-900 font-bold" 
-                        : "bg-white border-stone-200 text-stone-700 hover:border-emerald-500/40"
-                    }`}
-                  >
-                    <div className="text-xs truncate">{recipe.name}</div>
-                    <div className="text-[10px] text-stone-400 font-mono mt-0.5">🔥 {recipe.calories} kcal • {recipe.prepTime}</div>
-                  </button>
-                ))}
-              </div>
+            <div className="space-y-4">
+              {fallbackWarning && (
+                <div className="p-3.5 bg-amber-50/85 border border-amber-200/80 text-stone-800 rounded-xl text-xs font-semibold flex gap-2.5 items-start shadow-sm transition-all duration-300">
+                  <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 animate-pulse" />
+                  <div className="space-y-1">
+                    <span className="text-amber-800 font-bold block">Smart Fallback Enabled</span>
+                    <span className="text-stone-600 block leading-relaxed font-normal">{fallbackWarning}</span>
+                  </div>
+                </div>
+              )}
 
-              {/* Recipe full details view */}
-              <div className="sm:col-span-8 bg-white border border-stone-200 rounded-3xl p-6 shadow-sm space-y-5">
-                {activeRecipeIndex !== null && recipesList[activeRecipeIndex] && (
-                  (() => {
-                    const r = recipesList[activeRecipeIndex];
-                    return (
-                      <div className="space-y-5">
-                        
-                        {/* Recipe Header */}
-                        <div>
-                          <div className="flex justify-between items-start gap-2">
-                            <h4 className="font-extrabold text-base text-stone-900 leading-tight">{r.name}</h4>
-                            <span className="bg-emerald-50 text-emerald-800 text-[10px] font-mono px-2 py-0.5 rounded font-extrabold flex items-center gap-1 shrink-0">
-                              <Clock className="w-3 h-3" />
-                              <span>{r.prepTime}</span>
-                            </span>
-                          </div>
+              <div className="grid sm:grid-cols-12 gap-6 items-start">
+                
+                {/* Recipe list selectors */}
+                <div className="sm:col-span-4 space-y-2.5">
+                  <span className="text-[10px] font-bold text-stone-400 font-mono tracking-wider block">CHOOSE RECIPE:</span>
+                  {recipesList.map((recipe, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setActiveRecipeIndex(index)}
+                      className={`w-full text-left p-3.5 rounded-xl border transition ${
+                        activeRecipeIndex === index 
+                          ? "bg-emerald-50 border-emerald-500/70 text-emerald-900 font-bold" 
+                          : "bg-white border-stone-200 text-stone-700 hover:border-emerald-500/40"
+                      }`}
+                    >
+                      <div className="text-xs truncate">{recipe.name}</div>
+                      <div className="text-[10px] text-stone-400 font-mono mt-0.5">🔥 {recipe.calories} kcal • {recipe.prepTime}</div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Recipe full details view */}
+                <div className="sm:col-span-8 bg-white border border-stone-200 rounded-3xl p-6 shadow-sm space-y-5">
+                  {activeRecipeIndex !== null && recipesList[activeRecipeIndex] && (
+                    (() => {
+                      const r = recipesList[activeRecipeIndex];
+                      return (
+                        <div className="space-y-5">
                           
-                          {/* Recipe macros */}
-                          <div className="flex gap-3 text-[10px] font-bold font-mono text-stone-400 mt-2">
-                            <span>🔥 {r.calories} kcal</span>
-                            <span>•</span>
-                            <span>P: {r.protein}g</span>
-                            <span>•</span>
-                            <span>C: {r.carbs}g</span>
-                            <span>•</span>
-                            <span>F: {r.fats}g</span>
+                          {/* Recipe Header */}
+                          <div>
+                            <div className="flex justify-between items-start gap-2">
+                              <h4 className="font-extrabold text-base text-stone-900 leading-tight">{r.name}</h4>
+                              <span className="bg-emerald-50 text-emerald-800 text-[10px] font-mono px-2 py-0.5 rounded font-extrabold flex items-center gap-1 shrink-0">
+                                <Clock className="w-3 h-3" />
+                                <span>{r.prepTime}</span>
+                              </span>
+                            </div>
+                            
+                            {/* Recipe macros */}
+                            <div className="flex gap-3 text-[10px] font-bold font-mono text-stone-400 mt-2">
+                              <span>🔥 {r.calories} kcal</span>
+                              <span>•</span>
+                              <span>P: {r.protein}g</span>
+                              <span>•</span>
+                              <span>C: {r.carbs}g</span>
+                              <span>•</span>
+                              <span>F: {r.fats}g</span>
+                            </div>
                           </div>
-                        </div>
 
-                        {/* Ingredients */}
-                        <div className="space-y-2">
-                          <span className="text-[10px] font-extrabold font-mono tracking-wider text-stone-400 uppercase block">Required Ingredients</span>
-                          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-stone-600 font-medium">
-                            {r.ingredients.map((item, idx) => (
-                              <li key={idx} className="flex gap-2 items-center">
-                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0"></span>
-                                <span className="truncate" title={item}>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                          {/* Ingredients */}
+                          <div className="space-y-2">
+                            <span className="text-[10px] font-extrabold font-mono tracking-wider text-stone-400 uppercase block">Required Ingredients</span>
+                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-stone-600 font-medium">
+                              {r.ingredients.map((item, idx) => (
+                                <li key={idx} className="flex gap-2 items-center">
+                                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0"></span>
+                                  <span className="truncate" title={item}>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
 
-                        {/* Instructions */}
-                        <div className="space-y-2.5 pt-2 border-t border-stone-100">
-                          <span className="text-[10px] font-extrabold font-mono tracking-wider text-stone-400 uppercase block">Step-By-Step Cook Guidelines</span>
-                          <ol className="space-y-3 text-xs text-stone-600 font-semibold leading-relaxed">
-                            {r.instructions.map((step, idx) => (
-                              <li key={idx} className="flex gap-3 items-start">
-                                <span className="w-5 h-5 rounded-full bg-stone-100 flex items-center justify-center shrink-0 text-[10px] font-black text-stone-500 font-mono mt-0.5">{idx + 1}</span>
-                                <span>{step}</span>
-                              </li>
-                            ))}
-                          </ol>
-                        </div>
+                          {/* Instructions */}
+                          <div className="space-y-2.5 pt-2 border-t border-stone-100">
+                            <span className="text-[10px] font-extrabold font-mono tracking-wider text-stone-400 uppercase block">Step-By-Step Cook Guidelines</span>
+                            <ol className="space-y-3 text-xs text-stone-600 font-semibold leading-relaxed">
+                              {r.instructions.map((step, idx) => (
+                                <li key={idx} className="flex gap-3 items-start">
+                                  <span className="w-5 h-5 rounded-full bg-stone-100 flex items-center justify-center shrink-0 text-[10px] font-black text-stone-500 font-mono mt-0.5">{idx + 1}</span>
+                                  <span>{step}</span>
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
 
-                      </div>
-                    );
-                  })()
-                )}
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+
               </div>
-
             </div>
           )}
         </div>

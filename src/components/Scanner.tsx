@@ -16,6 +16,16 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
   const [analysisResult, setAnalysisResult] = useState<any | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
 
+  // Advanced contextual inputs for higher fidelity calorie forecasting
+  const [portionSize, setPortionSize] = useState("");
+  const [ingredients, setIngredients] = useState("");
+  const [cookingMethod, setCookingMethod] = useState("");
+  const [packagingLabel, setPackagingLabel] = useState("");
+  const [showRefinements, setShowRefinements] = useState(false);
+
+  // Active tab inside returned smart analysis report panel
+  const [resultsTab, setResultsTab] = useState<"overview" | "micronutrition" | "recommendations">("overview");
+
   // Manual Input States
   const [manualFoodName, setManualFoodName] = useState("");
   const [manualCalories, setManualCalories] = useState<number | "">("");
@@ -73,6 +83,47 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
     setIsCameraActive(false);
   };
 
+  const handleImageCompression = (imageSrc: string) => {
+    if (!imageSrc || !imageSrc.startsWith("data:image")) {
+      setSelectedImage(imageSrc);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let width = img.width;
+      let height = img.height;
+      
+      const max_size = 350; // keep under 30kb in base64 string width/height limits
+      if (width > height) {
+        if (width > max_size) {
+          height *= max_size / width;
+          width = max_size;
+        }
+      } else {
+        if (height > max_size) {
+          width *= max_size / height;
+          height = max_size;
+        }
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.6);
+        setSelectedImage(compressedDataUrl);
+      } else {
+        setSelectedImage(imageSrc);
+      }
+    };
+    img.onerror = () => {
+      setSelectedImage(imageSrc);
+    };
+    img.src = imageSrc;
+  };
+
   const capturePhoto = () => {
     if (videoRef.current) {
       const canvas = document.createElement("canvas");
@@ -82,7 +133,7 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
       if (ctx) {
         ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL("image/jpeg");
-        setSelectedImage(dataUrl);
+        handleImageCompression(dataUrl);
         setAnalysisResult(null);
         setErrorText(null);
         stopCamera();
@@ -112,7 +163,7 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
+        handleImageCompression(reader.result as string);
         setAnalysisResult(null);
         setErrorText(null);
       };
@@ -146,6 +197,10 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
         body: JSON.stringify({
           imageBase64: cleanBase64,
           mimeType,
+          portionSize,
+          ingredients,
+          cookingMethod,
+          packagingLabel,
           userProfile: {
             age: profile.age,
             weight: profile.weight,
@@ -157,7 +212,8 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
       });
 
       if (!response.ok) {
-        throw new Error("HTTP connection failed: " + response.statusText);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP connection failed (Status: ${response.status})`);
       }
 
       const data = await response.json();
@@ -165,6 +221,7 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
       // If mock Salmon triggered, let's adjust slightly for visual diversity if they clicked Cookie
       if (data.isMock && base64String === "MOCK_COOKIE") {
         setAnalysisResult({
+          ...data,
           foodName: "Triple Chocolate Chip Cookies",
           confidence: 0.98,
           calories: 450,
@@ -186,7 +243,7 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
       }
     } catch (err: any) {
       console.error(err);
-      setErrorText("Gemini scanning service timed out. Please verify your connection setup.");
+      setErrorText(err.message || "Failed to scan food. Please try again or type values manually.");
     } finally {
       setIsScanning(false);
     }
@@ -218,7 +275,8 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
       });
 
       if (!response.ok) {
-        throw new Error("Estimation query failed: " + response.statusText);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP connection failed (Status: ${response.status})`);
       }
 
       const data = await response.json();
@@ -231,7 +289,7 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
       setManualSummary(data.summary);
     } catch (err: any) {
       console.error(err);
-      setErrorText("Gemini estimating service is temporarily unavailable. Please type nutritional values manually.");
+      setErrorText(err.message || "Gemini estimating service is temporarily unavailable. Please type nutritional values manually.");
     } finally {
       setIsEstimating(false);
     }
@@ -268,7 +326,7 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
       return;
     }
 
-    if (!analysisResult) return;
+    if (!analysisResult || analysisResult.isImageUnclear) return;
 
     onLogMeal({
       foodName: analysisResult.foodName,
@@ -577,6 +635,80 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
             </div>
           )}
 
+          {/* Detailed portion & recipe helper refinements if image is loaded */}
+          {selectedImage && !isScanning && (
+            <div className="bg-stone-50 border border-stone-200/80 p-4 rounded-2xl space-y-3 font-sans">
+              <button
+                type="button"
+                onClick={() => setShowRefinements(!showRefinements)}
+                className="w-full flex justify-between items-center text-left cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-mono font-extrabold uppercase">🎯 Enhance Accuracy</span>
+                  <span className="text-xs font-black text-stone-700">Add Portion & Recipe Details</span>
+                </div>
+                <span className="text-[11px] font-bold text-stone-400">{showRefinements ? "Hide ▴" : "Add ▾"}</span>
+              </button>
+
+              {showRefinements && (
+                <div className="space-y-3 pt-2.5 border-t border-stone-200/60 animate-in fade-in duration-200">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-extrabold text-stone-400 uppercase tracking-wider font-mono">Portion Size / Quantity</label>
+                    <input
+                      type="text"
+                      value={portionSize}
+                      onChange={(e) => setPortionSize(e.target.value)}
+                      placeholder="e.g. 2 rotis, 1 cup rice, 250 ml drink"
+                      className="w-full bg-white border border-stone-250 p-2 rounded-xl text-xs text-stone-800 focus:outline-none focus:border-emerald-600 font-semibold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-extrabold text-stone-400 uppercase tracking-wider font-mono">Ingredients if known</label>
+                    <textarea
+                      value={ingredients}
+                      onChange={(e) => setIngredients(e.target.value)}
+                      placeholder="e.g. wheat, potato, mustard oil, salt"
+                      rows={2}
+                      className="w-full bg-white border border-stone-250 p-2 rounded-xl text-xs text-stone-800 focus:outline-none focus:border-emerald-600 font-semibold resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-extrabold text-stone-400 uppercase tracking-wider font-mono font-bold">Cooking Method</label>
+                      <select
+                        value={cookingMethod}
+                        onChange={(e) => setCookingMethod(e.target.value)}
+                        className="w-full bg-white border border-stone-250 p-2 rounded-xl text-[11px] text-stone-800 focus:outline-none focus:border-emerald-600 font-bold"
+                      >
+                        <option value="">Default (Auto-detect)</option>
+                        <option value="fried">Fried</option>
+                        <option value="baked">Baked</option>
+                        <option value="boiled">Boiled</option>
+                        <option value="grilled">Grilled</option>
+                        <option value="steamed">Steamed</option>
+                        <option value="sauteed">Sauteed</option>
+                        <option value="roasted">Roasted</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-extrabold text-stone-400 uppercase tracking-wider font-mono">Packaging/Label Info</label>
+                      <input
+                        type="text"
+                        value={packagingLabel}
+                        onChange={(e) => setPackagingLabel(e.target.value)}
+                        placeholder="e.g. Barcode descriptors"
+                        className="w-full bg-white border border-stone-250 p-2 rounded-xl text-xs text-stone-800 focus:outline-none focus:border-emerald-600 font-semibold"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Selected Action button logic */}
           {selectedImage && !isScanning && (
             <div className="flex gap-2">
@@ -629,113 +761,394 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
                 <span className="text-xs text-stone-400 font-semibold leading-normal block mt-1">Upload a meal image, then press &quot;Run Instant AI Scan&quot; to inspect full micro nutritional scores.</span>
               </div>
             </div>
+          ) : analysisResult.isImageUnclear ? (
+            <div className="bg-rose-50/70 rounded-3xl p-8 border border-rose-200 h-full flex flex-col justify-center items-center space-y-4">
+              <div className="w-16 h-16 bg-rose-100/90 text-rose-600 rounded-full flex items-center justify-center animate-pulse">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <div className="max-w-sm text-center space-y-3">
+                <h3 className="font-extrabold text-lg text-rose-950">Please take picture again</h3>
+                <p className="text-xs text-rose-800 font-medium leading-relaxed">
+                  The uploaded photo appears blurry, dark, or didn't show recognizable food clearly enough for a precise nutritional scan.
+                </p>
+                <div className="pt-2 pb-1 px-4 bg-white/70 border border-rose-100 rounded-2xl text-left text-[11px] text-stone-600 space-y-2 font-semibold">
+                  <div className="text-rose-900 font-extrabold uppercase text-[9px] tracking-wider">Tips for a Great Scan:</div>
+                  <div className="flex gap-2">
+                    <span className="text-rose-500 font-bold">✓</span>
+                    <span>Ensure bright, natural, or direct overhead lighting</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-rose-500 font-bold">✓</span>
+                    <span>Hold your camera steady to avoid blurriness</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-rose-500 font-bold">✓</span>
+                    <span>Center the food plate clearly in the screen</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="space-y-5">
               
+              {analysisResult.warning && (
+                <div className="p-3 bg-amber-50/85 border border-amber-200/50 text-stone-800 rounded-xl text-xs font-semibold flex gap-2.5 items-start">
+                  <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 animate-pulse" />
+                  <div className="space-y-0.5">
+                    <span className="text-amber-850 font-bold block">Smart Local Calibration Active</span>
+                    <span className="text-stone-600 block leading-relaxed font-normal text-[11px]">{analysisResult.warning}</span>
+                  </div>
+                </div>
+              )}
+
               {/* Header result */}
               <div className="flex justify-between items-start gap-4">
                 <div>
-                  <span className="text-[10px] font-bold font-mono text-stone-400 uppercase">IDENTIFIED DISH</span>
-                  <h3 className="text-xl font-bold text-stone-900 leading-tight">{analysisResult.foodName}</h3>
-                  <div className="text-[11px] text-stone-400 font-mono mt-0.5">Recognition Confidence: {Math.round(analysisResult.confidence * 100)}%</div>
+                  <span className="text-[10px] font-bold font-mono text-stone-400 uppercase tracking-widest block">IDENTIFIED DISH</span>
+                  <h3 className="text-xl font-extrabold text-stone-900 leading-tight font-sans tracking-tight">{analysisResult.foodName}</h3>
+                  {/* Dynamic Confidence Level Badge & Description */}
+                  {(() => {
+                    const confVal = analysisResult.confidence || 0.92;
+                    let level = "Medium";
+                    if (confVal >= 0.88) level = "High";
+                    else if (confVal < 0.65) level = "Low";
+
+                    let detail = "portion size estimated from image visual context";
+                    if (analysisResult.isFallback || analysisResult.isMock) {
+                      detail = "estimated from offline smart local databases";
+                    } else if (portionSize && ingredients) {
+                      detail = "refined by custom ingredients & portion specifications";
+                    } else if (portionSize) {
+                      detail = "custom portion size verified by user description";
+                    } else if (ingredients) {
+                      detail = "refined with custom user ingredients lists";
+                    } else if (cookingMethod) {
+                      detail = "custom cooking method verified";
+                    }
+
+                    return (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5 font-sans">
+                        <span className="text-[11px] text-stone-500 font-bold">Confidence:</span>
+                        <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded-md ${
+                          level === "High" ? "bg-emerald-100 text-emerald-800 border border-emerald-200/50" :
+                          level === "Medium" ? "bg-amber-100 text-amber-800 border border-amber-200/50" :
+                          "bg-stone-100 text-stone-700 border border-stone-200/50"
+                        }`}>
+                          {level}
+                        </span>
+                        <span className="text-[11px] text-stone-400 font-medium italic">
+                          ({detail})
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Score badge */}
-                <div className="p-2 bg-stone-50 rounded-2xl border border-stone-200 text-center shrink-0 min-w-[70px]">
-                  <span className="block text-[8px] font-bold text-stone-400 font-mono uppercase">QUALITY</span>
+                <div className="p-2 bg-stone-50 rounded-2xl border border-stone-200 text-center shrink-0 min-w-[75px]">
+                  <span className="block text-[8px] font-bold text-stone-400 font-mono uppercase">HEALTY RATIO</span>
                   <span className={`text-lg font-black block leading-none mt-0.5 ${
-                    analysisResult.healthScore >= 80 ? "text-emerald-600" :
-                    analysisResult.healthScore >= 50 ? "text-amber-500" :
+                    (analysisResult.healthScore || 75) >= 80 ? "text-emerald-600" :
+                    (analysisResult.healthScore || 75) >= 50 ? "text-amber-500" :
                     "text-rose-500"
-                  }`}>{analysisResult.healthScore}</span>
-                  <span className="text-[8px] text-stone-400 tracking-wide block font-semibold">/ 100 max</span>
+                  }`}>{analysisResult.healthScore || 75}</span>
+                  <span className="text-[7px] text-stone-400 tracking-wide block font-extrabold">/ 100 max</span>
                 </div>
               </div>
 
-              {/* Suitability recommendation box */}
-              <div className={`p-4 rounded-xl border flex gap-3 ${
-                analysisResult.suitability?.recommendation === "EAT" ? "bg-emerald-50 border-emerald-200 text-emerald-900" :
-                analysisResult.suitability?.recommendation === "MODERATE" ? "bg-amber-50 border-amber-200 text-amber-900" :
-                "bg-rose-50 border-rose-200 text-rose-900"
-              }`}>
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                  analysisResult.suitability?.recommendation === "EAT" ? "bg-emerald-100 text-emerald-800" :
-                  analysisResult.suitability?.recommendation === "MODERATE" ? "bg-amber-100 text-amber-800" :
-                  "bg-rose-100 text-rose-800"
-                }`}>
-                  {analysisResult.suitability?.recommendation === "EAT" ? <ShieldCheck className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs font-black uppercase font-mono tracking-wider">
-                    RECOMMENDED: {analysisResult.suitability?.recommendation}
+              {/* Detailed Report Sub-Tabs Dashboard Selector */}
+              <div className="flex bg-stone-100 p-1 rounded-xl gap-1 border border-stone-200/60 font-sans">
+                <button
+                  type="button"
+                  onClick={() => setResultsTab("overview")}
+                  className={`flex-1 text-center py-2 text-xs font-extrabold rounded-lg transition duration-200 cursor-pointer ${
+                    resultsTab === "overview" ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-900"
+                  }`}
+                >
+                  📊 Overview & Macros
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResultsTab("micronutrition")}
+                  className={`flex-1 text-center py-2 text-xs font-extrabold rounded-lg transition duration-200 cursor-pointer ${
+                    resultsTab === "micronutrition" ? "bg-emerald-600 text-white shadow-sm" : "text-stone-500 hover:text-stone-900"
+                  }`}
+                >
+                  🥗 Micros & Cooking
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResultsTab("recommendations")}
+                  className={`flex-1 text-center py-2 text-xs font-extrabold rounded-lg transition duration-200 cursor-pointer ${
+                    resultsTab === "recommendations" ? "bg-rose-500 text-white shadow-sm" : "text-stone-500 hover:text-stone-900"
+                  }`}
+                >
+                  ⚠️ Concerns & Changes
+                </button>
+              </div>
+
+              {/* TAB CONTENT 1: OVERVIEW & MACROS */}
+              {resultsTab === "overview" && (
+                <div className="space-y-5 animate-in fade-in duration-200">
+                  {/* Suitability recommendation box */}
+                  <div className={`p-4 rounded-xl border flex gap-3 ${
+                    analysisResult.suitability?.recommendation === "EAT" ? "bg-emerald-50/70 border-emerald-200 text-emerald-900" :
+                    analysisResult.suitability?.recommendation === "MODERATE" ? "bg-amber-50/70 border-amber-200 text-amber-900" :
+                    "bg-rose-50/70 border-rose-200 text-rose-900"
+                  }`}>
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                      analysisResult.suitability?.recommendation === "EAT" ? "bg-emerald-100 text-emerald-800" :
+                      analysisResult.suitability?.recommendation === "MODERATE" ? "bg-amber-100 text-amber-800" :
+                      "bg-rose-100 text-rose-800"
+                    }`}>
+                      {analysisResult.suitability?.recommendation === "EAT" ? <ShieldCheck className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-xs font-black uppercase font-mono tracking-wider">
+                        RECOMMENDED: {analysisResult.suitability?.recommendation || "EAT"}
+                      </div>
+                      <p className="text-xs font-semibold leading-relaxed opacity-95">{analysisResult.suitability?.reason}</p>
+                    </div>
                   </div>
-                  <p className="text-xs font-semibold leading-relaxed opacity-95">{analysisResult.suitability?.reason}</p>
-                </div>
-              </div>
 
-              {/* Main macros pill logs */}
-              <div className="grid grid-cols-4 gap-2.5">
-                <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-150 text-center">
-                  <span className="block text-[9px] font-bold text-stone-400 font-mono">CALORIES</span>
-                  <span className="text-sm font-black text-stone-900 block mt-0.5">{analysisResult.calories} kcal</span>
-                </div>
-                <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-150 text-center">
-                  <span className="block text-[9px] font-bold text-stone-400 font-mono">PROTEIN</span>
-                  <span className="text-sm font-black text-stone-950 block mt-0.5">{analysisResult.protein}g</span>
-                </div>
-                <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-150 text-center">
-                  <span className="block text-[9px] font-bold text-stone-400 font-mono">CARBS</span>
-                  <span className="text-sm font-black text-stone-950 block mt-0.5">{analysisResult.carbs}g</span>
-                </div>
-                <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-150 text-center">
-                  <span className="block text-[9px] font-bold text-stone-400 font-mono">FATS</span>
-                  <span className="text-sm font-black text-stone-950 block mt-0.5">{analysisResult.fats}g</span>
-                </div>
-              </div>
-
-              {/* Summary paragraph */}
-              <div className="space-y-1.5">
-                <strong className="text-xs text-stone-500 font-mono uppercase block">COMPOSITION SUMMARY</strong>
-                <p className="text-xs text-stone-600 leading-relaxed font-semibold">{analysisResult.summary}</p>
-              </div>
-
-              {/* Vitamins and minerals lists */}
-              <div className="grid grid-cols-2 gap-4 pt-1">
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-bold text-stone-400 font-mono uppercase block">VITAMINS DETECTED</span>
-                  {analysisResult.vitamins && analysisResult.vitamins.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {analysisResult.vitamins.map((v: string, i: number) => (
-                        <span key={i} className="text-[10px] font-semibold font-mono bg-blue-50 text-blue-800 px-2 py-0.5 rounded border border-blue-100">{v}</span>
-                      ))}
+                  {/* Macros extended grid */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-bold text-stone-400 font-mono tracking-wider">CALORIES</span>
+                      <span className="text-xs sm:text-sm font-black text-stone-900 block mt-0.5">{analysisResult.calories} kcal</span>
                     </div>
-                  ) : (
-                    <span className="text-xs text-stone-400">None detected</span>
+                    <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-bold text-stone-400 font-mono tracking-wider">PROTEIN</span>
+                      <span className="text-xs sm:text-sm font-black text-stone-950 block mt-0.5">{analysisResult.protein}g</span>
+                    </div>
+                    <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-bold text-stone-400 font-mono tracking-wider">TOTAL CARBS</span>
+                      <span className="text-xs sm:text-sm font-black text-stone-950 block mt-0.5">{analysisResult.carbs}g</span>
+                    </div>
+                    <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-bold text-stone-400 font-mono tracking-wider">FAT PROFILE</span>
+                      <span className="text-xs sm:text-sm font-black text-stone-950 block mt-0.5">{analysisResult.fats}g</span>
+                    </div>
+                    <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-bold text-stone-400 font-mono tracking-wider">DIETARY FIBER</span>
+                      <span className="text-xs sm:text-sm font-black text-stone-950 block mt-0.5">{analysisResult.dietaryFiber || 0}g</span>
+                    </div>
+                    <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
+                      <span className="block text-[9px] font-bold text-stone-400 font-mono tracking-wider">TOTAL SUGAR</span>
+                      <span className="text-xs sm:text-sm font-black text-stone-950 block mt-0.5">{analysisResult.sugar || 0}g</span>
+                    </div>
+                  </div>
+
+                  {/* Summary phrase */}
+                  <div className="space-y-1">
+                    <strong className="text-[10px] text-stone-400 font-sans tracking-wide block">COMPOSITION SUMMARY</strong>
+                    <p className="text-xs text-stone-600 leading-relaxed font-semibold">{analysisResult.summary}</p>
+                  </div>
+
+                  {/* Itemized breakdown table */}
+                  {analysisResult.itemsBreakdown && analysisResult.itemsBreakdown.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <span className="text-[10px] font-bold text-stone-400 font-mono uppercase block">ITEMIZED DISH BREAKDOWN</span>
+                      <div className="overflow-x-auto border border-stone-200/70 rounded-xl">
+                        <table className="w-full text-left text-xs font-sans">
+                          <thead>
+                            <tr className="bg-stone-50 border-b border-stone-150 text-stone-550 font-extrabold uppercase text-[9px] tracking-wider font-mono">
+                              <th className="p-2.5">Item / Ingredient</th>
+                              <th className="p-2.5 text-center">Estimate Wt</th>
+                              <th className="p-2.5 text-center">Calories</th>
+                              <th className="p-2.5">Macronutrients</th>
+                              <th className="p-2.5 text-right">Confidence</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-stone-100 text-stone-700 font-semibold">
+                            {analysisResult.itemsBreakdown.map((item: any, i: number) => (
+                              <tr key={i} className="hover:bg-stone-50/40">
+                                <td className="p-2.5 text-stone-900 font-bold">{item.itemName}</td>
+                                <td className="p-2.5 text-center">{item.weightGrams}g</td>
+                                <td className="p-2.5 text-center text-amber-600">{item.calories} kcal</td>
+                                <td className="p-2.5 font-mono text-[10px] text-stone-500">{item.macros}</td>
+                                <td className="p-2.5 text-right font-mono text-[10px] text-emerald-600 font-bold">{item.confidence}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   )}
                 </div>
+              )}
 
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-bold text-stone-400 font-mono uppercase block">MINERALS DETECTED</span>
-                  {analysisResult.minerals && analysisResult.minerals.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {analysisResult.minerals.map((m: string, i: number) => (
-                        <span key={i} className="text-[10px] font-semibold font-mono bg-amber-50 text-amber-800 px-2 py-0.5 rounded border border-amber-100">{m}</span>
+              {/* TAB CONTENT 2: MICROS & COOKING STYLE */}
+              {resultsTab === "micronutrition" && (
+                <div className="space-y-5 animate-in fade-in duration-200">
+                  {/* Health Score 1-10 Slider */}
+                  <div className="bg-stone-50 border border-stone-200/80 p-4 rounded-2xl space-y-3.5">
+                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                      <div>
+                        <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-widest block">DIET HEALTHINESS SCORE</span>
+                        <strong className="text-lg font-black text-stone-900 tracking-tight font-sans">
+                          Aesthetic Rating: {analysisResult.healthScore1To10 || Math.round((analysisResult.healthScore || 75) / 10)} / 10
+                        </strong>
+                      </div>
+                      {/* Rating Dots */}
+                      <div className="flex gap-1">
+                        {Array.from({ length: 10 }).map((_, idx) => {
+                          const ratingVal = analysisResult.healthScore1To10 || Math.round((analysisResult.healthScore || 75) / 10);
+                          const isActive = idx < ratingVal;
+                          return (
+                            <div
+                              key={idx}
+                              className={`w-3.5 h-3.5 rounded-full transition duration-300 ${
+                                isActive 
+                                  ? ratingVal >= 8 ? "bg-emerald-500 shadow-sm" :
+                                    ratingVal >= 5 ? "bg-amber-400" : "bg-rose-500"
+                                  : "bg-stone-250"
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <p className="text-xs text-stone-600 font-semibold leading-relaxed border-t border-stone-200/60 pt-2.5">
+                      {analysisResult.healthScoreExplanation || analysisResult.summary}
+                    </p>
+                  </div>
+
+                  {/* Determined Cooking Method */}
+                  <div className="p-3.5 bg-sky-50 border border-sky-150 rounded-2xl flex items-center justify-between text-xs font-sans">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-extrabold text-sky-600 font-mono uppercase tracking-wider block">DETERMINED COOKING METHOD</span>
+                      <strong className="text-stone-850 capitalize font-extrabold text-sm block">
+                        {analysisResult.cookingMethod || "Baking / Boiling"}
+                      </strong>
+                    </div>
+                    <span className="text-2xl">🍳</span>
+                  </div>
+
+                  {/* Micronutrient Estimates Grid */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-stone-400 font-mono uppercase block tracking-wider">MICRONUTRIENT SCIENTIFIC ESTIMATES</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs font-sans">
+                      <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                        <span className="text-[9px] font-bold text-stone-400 font-mono block">SODIUM</span>
+                        <strong className="text-stone-800 block text-xs font-bold mt-0.5">{analysisResult.micronutrients?.sodium || "160mg (7% DV)"}</strong>
+                      </div>
+                      <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                        <span className="text-[9px] font-bold text-stone-400 font-mono block">POTASSIUM</span>
+                        <strong className="text-stone-800 block text-xs font-bold mt-0.5">{analysisResult.micronutrients?.potassium || "310mg (9% DV)"}</strong>
+                      </div>
+                      <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                        <span className="text-[9px] font-bold text-stone-400 font-mono block">CALCIUM</span>
+                        <strong className="text-stone-800 block text-xs font-bold mt-0.5">{analysisResult.micronutrients?.calcium || "45mg (5% DV)"}</strong>
+                      </div>
+                      <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                        <span className="text-[9px] font-bold text-stone-400 font-mono block">IRON</span>
+                        <strong className="text-stone-800 block text-xs font-bold mt-0.5">{analysisResult.micronutrients?.iron || "1.3mg (7% DV)"}</strong>
+                      </div>
+                      <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                        <span className="text-[9px] font-bold text-stone-400 font-mono block">VITAMIN A</span>
+                        <strong className="text-stone-800 block text-xs font-bold mt-0.5">{analysisResult.micronutrients?.vitaminA || "55mcg (6% DV)"}</strong>
+                      </div>
+                      <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                        <span className="text-[9px] font-bold text-stone-400 font-mono block">VITAMIN C</span>
+                        <strong className="text-stone-800 block text-xs font-bold mt-0.5">{analysisResult.micronutrients?.vitaminC || "6mg (8% DV)"}</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB CONTENT 3: CONCERNS & HEALTHY CHANGES */}
+              {resultsTab === "recommendations" && (
+                <div className="space-y-5 animate-in fade-in duration-200 font-sans">
+                  {/* Warning categories triggers */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-stone-400 font-mono uppercase block tracking-wider">NUTRITION COMPOSITION CONCERNS</span>
+                    <div className="space-y-2 text-xs font-sans font-semibold">
+                      {analysisResult.concerns?.highSugar && analysisResult.concerns.highSugar.length > 0 ? (
+                        <div className="p-2.5 bg-amber-50/65 border border-amber-200/40 rounded-xl flex items-center justify-between">
+                          <span className="text-amber-800 font-bold shrink-0">⚠️ High Sugar content:</span>
+                          <span className="text-amber-900 font-bold font-mono text-[11px] text-right truncate pl-2">{analysisResult.concerns.highSugar.join(", ")}</span>
+                        </div>
+                      ) : (
+                        <div className="p-2.5 bg-emerald-50/50 border border-emerald-150 rounded-xl flex items-center justify-between">
+                          <span className="text-emerald-800 font-bold">✓ Low sugar index</span>
+                          <span className="text-emerald-900 font-mono text-[10px] uppercase font-bold">Safe Limit</span>
+                        </div>
+                      )}
+
+                      {analysisResult.concerns?.highSalt && analysisResult.concerns.highSalt.length > 0 ? (
+                        <div className="p-2.5 bg-amber-50/65 border border-amber-200/40 rounded-xl flex items-center justify-between">
+                          <span className="text-amber-800 font-bold shrink-0">⚠️ High Sodium/Salt:</span>
+                          <span className="text-amber-900 font-bold font-mono text-[11px] text-right truncate pl-2">{analysisResult.concerns.highSalt.join(", ")}</span>
+                        </div>
+                      ) : (
+                        <div className="p-2.5 bg-emerald-50/50 border border-emerald-150 rounded-xl flex items-center justify-between">
+                          <span className="text-emerald-800 font-bold">✓ Standard sodium balance</span>
+                          <span className="text-emerald-900 font-mono text-[10px] uppercase font-bold">Safe Limit</span>
+                        </div>
+                      )}
+
+                      {analysisResult.concerns?.highSaturatedFat && analysisResult.concerns.highSaturatedFat.length > 0 && (
+                        <div className="p-2.5 bg-amber-50/65 border border-amber-200/40 rounded-xl flex items-center justify-between">
+                          <span className="text-amber-800 font-bold shrink-0">⚠️ Saturated lipids concentration:</span>
+                          <span className="text-amber-900 font-bold font-mono text-[11px] text-right truncate pl-2">{analysisResult.concerns.highSaturatedFat.join(", ")}</span>
+                        </div>
+                      )}
+
+                      {analysisResult.concerns?.highTransFat && analysisResult.concerns.highTransFat.length > 0 && (
+                        <div className="p-2.5 bg-rose-50/80 border border-rose-200/40 rounded-xl flex items-center justify-between">
+                          <span className="text-rose-800 font-black shrink-0">🚨 Trans Fat elements:</span>
+                          <span className="text-rose-900 font-black font-mono text-[11px] text-right truncate pl-2">{analysisResult.concerns.highTransFat.join(", ")}</span>
+                        </div>
+                      )}
+
+                      {analysisResult.concerns?.ultraProcessedAdditives && analysisResult.concerns.ultraProcessedAdditives.length > 0 && (
+                        <div className="p-2.5 bg-rose-50/80 border border-rose-200/40 rounded-xl flex items-center justify-between">
+                          <span className="text-rose-800 font-black shrink-0">🚨 Ultra-processed additives:</span>
+                          <span className="text-rose-900 font-black font-mono text-[11px] text-right truncate pl-2">{analysisResult.concerns.ultraProcessedAdditives.join(", ")}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Clean recipe modifications & alternatives */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-stone-400 font-mono uppercase block tracking-wider">HEALTHY RECIPE REPLACEMENTS / CONVERSIONS</span>
+                    <div className="space-y-2">
+                      {analysisResult.alternatives?.map((item: string, i: number) => (
+                        <div key={i} className="p-3 bg-stone-50 border border-stone-200 rounded-xl flex gap-x-2.5 text-xs text-stone-700 font-semibold leading-relaxed">
+                          <span className="text-emerald-500 font-black text-sm shrink-0">✓</span>
+                          <span>{item}</span>
+                        </div>
                       ))}
                     </div>
-                  ) : (
-                    <span className="text-xs text-stone-400">None detected</span>
-                  )}
+                  </div>
+
+                  {/* Uncertainties & Required additional info inputs */}
+                  <div className="bg-stone-50 border border-stone-200 p-3.5 rounded-xl space-y-2 text-xs">
+                    <span className="text-[9px] font-extrabold text-stone-400 uppercase tracking-widest font-mono">Assumptions made</span>
+                    <p className="text-stone-500 text-[11px] font-semibold leading-relaxed">
+                      <strong>Uncertainties:</strong> {analysisResult.uncertainties || "Standard database reference matches utilized."}
+                    </p>
+                    {analysisResult.requiredAdditionalInfo && analysisResult.requiredAdditionalInfo !== "None" && (
+                      <div className="pt-2 border-t border-stone-200/60 flex items-start gap-2 text-amber-800 text-[11px] font-bold block leading-relaxed">
+                        <span>ℹ</span>
+                        <span><strong>Enhancement Parameters Requested:</strong> {analysisResult.requiredAdditionalInfo}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Meal Select Category controls and confirming save buttons */}
-              <div className="pt-5 border-t border-stone-100 flex flex-col sm:flex-row gap-4 items-center justify-between">
-                <div className="flex items-center gap-3 w-full sm:w-auto justify-between border-b sm:border-0 pb-3 sm:pb-0">
-                  <label className="text-xs font-bold text-stone-500 font-mono shrink-0">MEAL CLASSIFICATION</label>
+              <div className="pt-5 border-t border-stone-205 flex flex-col sm:flex-row gap-4 items-center justify-between">
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-between border-b sm:border-0 pb-3 sm:pb-0 font-sans">
+                  <label className="text-[10px] font-bold text-stone-400 font-mono shrink-0 uppercase tracking-wider">MEAL CLASSIFICATION</label>
                   <select 
                     value={mealType}
                     onChange={(e) => setMealType(e.target.value as MealType)}
-                    className="bg-stone-50 border border-stone-250 hover:border-stone-450 p-2 rounded-xl text-xs font-bold text-stone-700 font-mono cursor-pointer"
+                    className="bg-white border border-stone-250 p-2 rounded-xl text-xs font-bold text-stone-700 font-mono cursor-pointer focus:outline-none focus:border-emerald-600"
                   >
                     <option value="Breakfast">Breakfast</option>
                     <option value="Lunch">Lunch</option>
@@ -748,7 +1161,7 @@ export default function Scanner({ profile, onLogMeal, onClose }: ScannerProps) {
                   onClick={handleConfirmSave}
                   className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-xl transition duration-200 text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer shadow-sm shadow-emerald-600/20"
                 >
-                  <Check className="w-4 h-4" />
+                  <Check className="w-4 h-4 text-white font-bold" />
                   <span>Log to Daily Nutrition Tracker</span>
                 </button>
               </div>

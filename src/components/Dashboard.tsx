@@ -45,10 +45,16 @@ interface DashboardProps {
 
 export default function Dashboard({ logs, profile, onAddMeallClick, onDeleteLog, onUpdateProfile }: DashboardProps) {
   const [hydrationUnites, setHydrationUnites] = useState<number>(4); // default 4 glasses of water
+  const [chartMounted, setChartMounted] = useState(false);
+
+  React.useEffect(() => {
+    setChartMounted(true);
+  }, []);
   const [quickWeight, setQuickWeight] = useState<string>(profile.weight.toString());
   const [quickTargetWeight, setQuickTargetWeight] = useState<string>((profile.targetWeight || profile.weight || 72).toString());
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [selectedMealFilter, setSelectedMealFilter] = useState<"All" | MealType>("All");
+  const [selectedDateFilter, setSelectedDateFilter] = useState<"Today" | "Yesterday" | "All-Time History">("Today");
   const [selectedMealForModal, setSelectedMealForModal] = useState<FoodLog | null>(null);
 
   React.useEffect(() => {
@@ -59,6 +65,25 @@ export default function Dashboard({ logs, profile, onAddMeallClick, onDeleteLog,
   // Group nutrients logged today
   const todayStr = new Date().toISOString().split("T")[0];
   const todayLogs = logs.filter(log => log.date === todayStr);
+
+  const yesterdayStr = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split("T")[0];
+  })();
+
+  const displayedLogs = logs.filter(log => {
+    if (selectedDateFilter === "Today") {
+      return log.date === todayStr;
+    } else if (selectedDateFilter === "Yesterday") {
+      return log.date === yesterdayStr;
+    }
+    return true; // All-time history
+  });
+
+  const sortedDisplayedLogs = [...displayedLogs].sort((a, b) => {
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
 
   const totalCalories = todayLogs.reduce((sum, log) => sum + log.calories, 0);
   const totalProtein = todayLogs.reduce((sum, log) => sum + log.protein, 0);
@@ -525,59 +550,65 @@ export default function Dashboard({ logs, profile, onAddMeallClick, onDeleteLog,
           <span className="text-[10px] font-bold font-mono tracking-wider text-stone-400 uppercase">WEEKLY TRENDS & PROGRESS</span>
           <h3 className="font-sans font-bold text-lg text-stone-900">7-Day Progress Trends</h3>
         </div>
-        <div className="h-64 sm:h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={historyData} margin={{ top: 15, right: 15, left: -15, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f4" />
-              <XAxis 
-                dataKey="name" 
-                tick={{ fontSize: 11, fontWeight: 500, fill: "#78716c" }} 
-                axisLine={false} 
-                tickLine={false}
-              />
-              <YAxis 
-                tick={{ fontSize: 11, fontWeight: 500, fill: "#78716c" }} 
-                axisLine={false} 
-                tickLine={false}
-              />
-              <Tooltip 
-                contentStyle={{ 
-                  borderRadius: "12px", 
-                  backgroundColor: "#1c1917", 
-                  color: "#fff", 
-                  border: "none",
-                  fontSize: "12px",
-                  fontFamily: "sans-serif",
-                  boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)"
-                }}
-              />
-              <Legend 
-                verticalAlign="top" 
-                height={36} 
-                iconType="circle"
-                wrapperStyle={{ fontSize: "12px", fontFamily: "sans-serif", fontWeight: 500 }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="calories" 
-                stroke="#10b981" 
-                strokeWidth={3}
-                dot={{ r: 4, strokeWidth: 2, stroke: "#10b981", fill: "#ffffff" }}
-                activeDot={{ r: 6, strokeWidth: 0, fill: "#10b981" }}
-                name="Consumed Intake (kcal)"
-              />
-              <Line 
-                type="monotone" 
-                dataKey="goal" 
-                stroke="#ea580c" 
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                dot={false}
-                activeDot={false}
-                name="Daily Calorie Goal (kcal)"
-              />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="h-64 sm:h-72 w-full min-h-[250px]">
+          {chartMounted ? (
+            <ResponsiveContainer width="99%" height="100%">
+              <LineChart data={historyData} margin={{ top: 15, right: 15, left: -15, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f4" />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fontSize: 11, fontWeight: 500, fill: "#78716c" }} 
+                  axisLine={false} 
+                  tickLine={false}
+                />
+                <YAxis 
+                  tick={{ fontSize: 11, fontWeight: 500, fill: "#78716c" }} 
+                  axisLine={false} 
+                  tickLine={false}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    borderRadius: "12px", 
+                    backgroundColor: "#1c1917", 
+                    color: "#fff", 
+                    border: "none",
+                    fontSize: "12px",
+                    fontFamily: "sans-serif",
+                    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)"
+                  }}
+                />
+                <Legend 
+                  verticalAlign="top" 
+                  height={36} 
+                  iconType="circle"
+                  wrapperStyle={{ fontSize: "12px", fontFamily: "sans-serif", fontWeight: 500 }}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="calories" 
+                  stroke="#10b981" 
+                  strokeWidth={3}
+                  dot={{ r: 4, strokeWidth: 2, stroke: "#10b981", fill: "#ffffff" }}
+                  activeDot={{ r: 6, strokeWidth: 0, fill: "#10b981" }}
+                  name="Consumed Intake (kcal)"
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="goal" 
+                  stroke="#ea580c" 
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  activeDot={false}
+                  name="Daily Calorie Goal (kcal)"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-xs text-stone-400 font-bold font-sans">
+              Loading trends data...
+            </div>
+          )}
         </div>
       </div>
 
@@ -716,26 +747,47 @@ export default function Dashboard({ logs, profile, onAddMeallClick, onDeleteLog,
 
       {/* Daily meal items list */}
       <div className="bg-white border border-stone-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
-        <div className="flex justify-between items-center flex-wrap gap-4">
+        <div className="flex justify-between items-center flex-wrap gap-4 border-b border-stone-100 pb-4">
           <div>
             <span className="text-[10px] font-bold font-mono text-stone-400 uppercase tracking-wider">LOGGED ITEMS</span>
-            <h3 className="text-lg font-bold text-stone-900">Today`s Plates and Meals</h3>
+            <h3 className="text-lg font-bold text-stone-900">
+              {selectedDateFilter === "Today" ? "Today`s Plates and Meals" :
+               selectedDateFilter === "Yesterday" ? "Yesterday`s Plates and Meals" :
+               "All-Time Saved Plates and Meals"}
+            </h3>
           </div>
-          <span className="text-xs bg-stone-100 text-stone-600 px-3 py-1 rounded-md font-mono font-bold">
-            {todayLogs.length} items logged
-          </span>
+          
+          <div className="flex items-center gap-1.5 bg-stone-100 p-1 rounded-xl">
+            {(["Today", "Yesterday", "All-Time History"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setSelectedDateFilter(mode)}
+                className={`text-[11px] px-3 py-1.5 rounded-lg font-extrabold transition-all duration-200 cursor-pointer ${
+                  selectedDateFilter === mode
+                    ? "bg-white text-stone-900 shadow-sm"
+                    : "text-stone-500 hover:text-stone-900"
+                }`}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {todayLogs.length === 0 ? (
+        {sortedDisplayedLogs.length === 0 ? (
           <div className="text-center py-10 space-y-3">
             <Utensils className="w-10 h-10 text-stone-300 mx-auto" />
-            <p className="text-stone-400 text-xs font-semibold">No food logged yet today. Try scanning a dish now!</p>
+            <p className="text-stone-400 text-xs font-semibold">
+              {selectedDateFilter === "Today" ? "No food logged yet today. Try scanning a dish now!" :
+               selectedDateFilter === "Yesterday" ? "No food logged yesterday." :
+               "No food logs saved yet."}
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-stone-100">
-            {todayLogs.map((log) => (
+            {sortedDisplayedLogs.map((log) => (
               <div key={log.id} className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-4 flex-1">
                   {log.imageBase64 ? (
                     <img 
                       src={`data:image/png;base64,${log.imageBase64}`} 
@@ -747,16 +799,19 @@ export default function Dashboard({ logs, profile, onAddMeallClick, onDeleteLog,
                       🍽️
                     </div>
                   )}
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-stone-900">{log.foodName}</span>
-                      <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-extrabold ${
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center flex-wrap gap-2">
+                      <span className="font-bold text-sm text-stone-900 break-words">{log.foodName}</span>
+                      {selectedDateFilter === "All-Time History" && (
+                        <span className="text-[10px] text-stone-400 font-bold font-mono">({log.date})</span>
+                      )}
+                      <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-extrabold shrink-0 ${
                         log.recommendation === "EAT" ? "bg-emerald-100 text-emerald-800" :
                         log.recommendation === "MODERATE" ? "bg-amber-100 text-amber-800" :
                         "bg-rose-100 text-rose-800"
                       }`}>{log.recommendation}</span>
                     </div>
-                    <div className="text-[11px] text-stone-500 font-semibold font-mono flex items-center gap-2 mt-0.5 whitespace-nowrap">
+                    <div className="text-[11px] text-stone-500 font-semibold font-mono flex items-center gap-2 mt-0.5 whitespace-nowrap overflow-x-auto scrollbar-none">
                       <span>{log.mealType}</span>
                       <span>•</span>
                       <span>{log.calories} kcal</span>
@@ -767,14 +822,14 @@ export default function Dashboard({ logs, profile, onAddMeallClick, onDeleteLog,
                   </div>
                 </div>
 
-                <div className="flex sm:flex-col items-center sm:items-end gap-3 self-stretch sm:self-auto justify-between border-t sm:border-t-0 pt-3 sm:pt-0 border-stone-100">
+                <div className="flex sm:flex-col items-center sm:items-end gap-3 self-stretch sm:self-auto justify-between border-t sm:border-t-0 pt-3 sm:pt-0 border-stone-100 shrink-0">
                   <div className="text-left sm:text-right space-y-0.5 font-mono text-[10px] text-stone-500">
                     <div className="font-semibold">P: {log.protein}g | C: {log.carbs}g | F: {log.fats}g</div>
                     <div>{new Date(log.timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</div>
                   </div>
                   <button
                     onClick={() => onDeleteLog(log.id)}
-                    className="text-stone-400 hover:text-rose-600 p-1.5 hover:bg-rose-50 rounded-lg transition"
+                    className="text-stone-400 hover:text-rose-600 p-1.5 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                     title="Delete log"
                   >
                     <Trash2 className="w-4 h-4" />

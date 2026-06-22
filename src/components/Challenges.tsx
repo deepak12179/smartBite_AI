@@ -1,5 +1,5 @@
 import React from "react";
-import { Award, Flame, Zap, ShieldCheck, Star, Users, CheckCircle, HelpCircle, Trophy, Sparkles, Activity, Apple, CookingPot, Circle } from "lucide-react";
+import { Award, Flame, Zap, Star, CheckCircle, Trophy, Sparkles, Activity, Apple, CookingPot } from "lucide-react";
 import { Challenge, UserProfile } from "../types";
 import { BADGES_LIST } from "../lib/storage";
 
@@ -157,7 +157,7 @@ export default function Challenges({ profile, challenges }: ChallengesProps) {
                   className={`p-4 rounded-2xl border text-center transition-all flex flex-col justify-between items-center gap-1.5 ${
                     isUnlocked 
                       ? "bg-stone-500/5 border-stone-200 shadow-sm" 
-                      : "bg-stone-150/40 border-stone-200/50 opacity-40 select-none"
+                      : "bg-stone-100/40 border-stone-200/50 opacity-40 select-none"
                   }`}
                 >
                   <div className="space-y-2.5 flex flex-col items-center">

@@ -58,6 +58,20 @@
         "badges": {
           "type": "array",
           "description": "List of unlocked badge IDs"
+        },
+        "gender": {
+          "type": "string",
+          "description": "User gender biological assignment",
+          "enum": ["Male", "Female"]
+        },
+        "activityLevel": {
+          "type": "string",
+          "description": "User exercise/effort level",
+          "enum": ["Sedentary", "Light", "Moderate", "Active"]
+        },
+        "targetWeight": {
+          "type": "number",
+          "description": "Target weight user wants to achieve in kg"
         }
       },
       "required": ["uid", "displayName", "email", "age", "weight", "height", "dailyCalorieGoal", "healthGoals", "dietPlan", "streakCount", "points", "badges"]
